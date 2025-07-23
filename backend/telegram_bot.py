@@ -791,6 +791,19 @@ class TelegramBot:
             await self.handle_answer(update, context)
         elif query.data == "get_diet":
             await self.send_diet(update, context)
+        # Админ функции
+        elif query.data == "admin_broadcast":
+            await self.admin_broadcast_start(update, context)
+        elif query.data == "admin_users":
+            await self.admin_users_list(update, context)
+        elif query.data == "admin_stats":
+            await self.admin_stats(update, context)
+        elif query.data == "admin_cancel":
+            await self.admin_cancel(update, context)
+        elif query.data == "admin_menu":
+            await self.show_admin_menu(query, context)
+        elif query.data == "admin_broadcast_confirm":
+            await self.admin_broadcast_confirm(update, context)
             
     def setup_handlers(self):
         """Настройка обработчиков"""
