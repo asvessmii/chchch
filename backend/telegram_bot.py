@@ -37,6 +37,9 @@ test_results_collection = db.test_results
 CHANNEL_USERNAME = "@anna_gertssss"
 CHANNEL_URL = "https://t.me/anna_gertssss"
 
+# ID админа
+ADMIN_ID = 7470811680
+
 # Вопросы теста с баллами
 TEST_QUESTIONS = [
     {
