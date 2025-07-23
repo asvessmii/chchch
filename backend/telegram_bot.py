@@ -808,7 +808,13 @@ class TelegramBot:
     def setup_handlers(self):
         """Настройка обработчиков"""
         self.application.add_handler(CommandHandler("start", self.start_command))
+        self.application.add_handler(CommandHandler("admin", self.admin_command))
         self.application.add_handler(CallbackQueryHandler(self.callback_query_handler))
+        # Обработчик сообщений для админ-рассылки (должен быть после других обработчиков)
+        self.application.add_handler(MessageHandler(
+            filters.TEXT | filters.PHOTO | filters.VIDEO | filters.DOCUMENT,
+            self.handle_admin_broadcast_message
+        ))
         
     async def run(self):
         """Запуск бота"""
