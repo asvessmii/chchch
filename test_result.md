@@ -106,7 +106,7 @@ user_problem_statement: "Add admin functionality to existing Telegram bot. Admin
 
 backend:
   - task: "Add admin command handler"
-    implemented: false
+    implemented: true
     working: "NA"
     file: "/app/backend/telegram_bot.py"
     stuck_count: 0
@@ -115,10 +115,10 @@ backend:
     status_history:
       - working: "NA"
         agent: "main"
-        comment: "Need to implement /admin command with access control for admin ID 7470811680"
+        comment: "Implemented /admin command with access control for admin ID 7470811680, added admin menu with broadcast, users list, and stats options"
 
   - task: "Implement mass broadcast functionality"
-    implemented: false
+    implemented: true
     working: "NA"
     file: "/app/backend/telegram_bot.py"
     stuck_count: 0
@@ -127,19 +127,19 @@ backend:
     status_history:
       - working: "NA"
         agent: "main"
-        comment: "Need to add broadcast feature to send messages to all bot users"
+        comment: "Implemented mass broadcast with message confirmation, support for text/photo/video/document messages, and delivery statistics"
 
   - task: "Implement user list view functionality"
-    implemented: false
+    implemented: true
     working: "NA"
-    file: "/app/backend/telegram_bot.py"
+    file: "/app/backend/telegram_bot.py" 
     stuck_count: 0
     priority: "high"
     needs_retesting: true
     status_history:
       - working: "NA"
         agent: "main"
-        comment: "Need to add feature to display numbered list of users with usernames"
+        comment: "Implemented numbered user list with usernames, names, test completion status, and pagination for long lists"
 
 frontend:
   - task: "No frontend changes needed"
