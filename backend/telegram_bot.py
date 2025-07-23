@@ -474,6 +474,310 @@ class TelegramBot:
         except Exception as e:
             logger.error(f"Ошибка при отправке PDF: {e}")
             await query.message.reply_text("Извини, произошла ошибка при отправке файла. Попробуй позже.")
+
+    async def admin_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик команды /admin"""
+        user_id = update.effective_user.id
+        
+        # Проверяем, что команду вызвал админ
+        if user_id != ADMIN_ID:
+            await update.message.reply_text("❌ У вас нет доступа к админ-панели.")
+            return
+        
+        admin_text = "🔧 **Админ-панель**\n\nВыберите действие:"
+        
+        keyboard = [
+            [InlineKeyboardButton("📢 Массовая рассылка", callback_data="admin_broadcast")],
+            [InlineKeyboardButton("👥 Список пользователей", callback_data="admin_users")],
+            [InlineKeyboardButton("📊 Статистика", callback_data="admin_stats")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(admin_text, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def admin_broadcast_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Начало массовой рассылки"""
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = query.from_user.id
+        if user_id != ADMIN_ID:
+            await query.edit_message_text("❌ У вас нет доступа к админ-панели.")
+            return
+        
+        # Устанавливаем состояние ожидания сообщения для рассылки
+        self.user_states[str(user_id)] = {
+            "admin_mode": "broadcast_waiting",
+            "message_id": query.message.message_id
+        }
+        
+        await query.edit_message_text(
+            "📢 **Массовая рассылка**\n\n"
+            "Отправьте сообщение, которое нужно разослать всем пользователям бота.\n\n"
+            "_Поддерживаются текст, фото, видео и другие типы сообщений._",
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Отмена", callback_data="admin_cancel")]])
+        )
+
+    async def admin_users_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показ списка пользователей"""
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = query.from_user.id
+        if user_id != ADMIN_ID:
+            await query.edit_message_text("❌ У вас нет доступа к админ-панели.")
+            return
+        
+        try:
+            # Получаем всех пользователей из базы данных
+            users = list(users_collection.find({}, {
+                "user_id": 1, 
+                "username": 1, 
+                "first_name": 1, 
+                "last_name": 1,
+                "created_at": 1,
+                "test_completed": 1
+            }).sort("created_at", 1))
+            
+            if not users:
+                await query.edit_message_text("👥 Пользователи не найдены.")
+                return
+            
+            # Формируем список пользователей
+            users_text = "👥 **Список пользователей:**\n\n"
+            for i, user in enumerate(users, 1):
+                username = user.get('username', 'Нет username')
+                first_name = user.get('first_name', 'Нет имени')
+                last_name = user.get('last_name', '')
+                full_name = f"{first_name} {last_name}".strip()
+                test_status = "✅" if user.get('test_completed', False) else "❌"
+                
+                users_text += f"{i}. @{username} ({full_name}) {test_status}\n"
+                
+                # Ограничиваем длину сообщения Telegram (макс. 4096 символов)
+                if len(users_text) > 3500:
+                    users_text += f"\n... и еще {len(users) - i} пользователей"
+                    break
+            
+            users_text += f"\n📊 **Всего пользователей:** {len(users)}"
+            users_text += "\n✅ - прошел тест, ❌ - не проходил тест"
+            
+            keyboard = [[InlineKeyboardButton("🔄 Обновить", callback_data="admin_users")],
+                       [InlineKeyboardButton("◀️ Назад", callback_data="admin_menu")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.edit_message_text(users_text, reply_markup=reply_markup, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Ошибка при получении списка пользователей: {e}")
+            await query.edit_message_text("❌ Ошибка при получении списка пользователей.")
+
+    async def admin_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показ статистики"""
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = query.from_user.id
+        if user_id != ADMIN_ID:
+            await query.edit_message_text("❌ У вас нет доступа к админ-панели.")
+            return
+        
+        try:
+            # Получаем статистику
+            total_users = users_collection.count_documents({})
+            total_tests = test_results_collection.count_documents({})
+            users_with_tests = users_collection.count_documents({"test_completed": True})
+            
+            # Статистика по датам (пользователи за последние 7 дней)
+            from datetime import datetime, timedelta
+            week_ago = datetime.utcnow() - timedelta(days=7)
+            new_users_week = users_collection.count_documents({"created_at": {"$gte": week_ago}})
+            
+            stats_text = f"""📊 **Статистика бота:**
+
+👥 **Пользователи:**
+• Всего: {total_users}
+• За неделю: {new_users_week}
+• Прошли тест: {users_with_tests}
+
+📝 **Тесты:**
+• Всего пройдено: {total_tests}
+• Конверсия: {round((users_with_tests / total_users * 100) if total_users > 0 else 0, 1)}%
+
+📅 **Дата:** {datetime.now().strftime('%d.%m.%Y %H:%M')}"""
+
+            keyboard = [[InlineKeyboardButton("🔄 Обновить", callback_data="admin_stats")],
+                       [InlineKeyboardButton("◀️ Назад", callback_data="admin_menu")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.edit_message_text(stats_text, reply_markup=reply_markup, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Ошибка при получении статистики: {e}")
+            await query.edit_message_text("❌ Ошибка при получении статистики.")
+
+    async def admin_cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Отмена админ-действия"""
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = str(query.from_user.id)
+        if user_id in self.user_states:
+            del self.user_states[user_id]
+        
+        await self.show_admin_menu(query, context)
+
+    async def show_admin_menu(self, query, context: ContextTypes.DEFAULT_TYPE):
+        """Показ главного админ-меню"""
+        admin_text = "🔧 **Админ-панель**\n\nВыберите действие:"
+        
+        keyboard = [
+            [InlineKeyboardButton("📢 Массовая рассылка", callback_data="admin_broadcast")],
+            [InlineKeyboardButton("👥 Список пользователей", callback_data="admin_users")],
+            [InlineKeyboardButton("📊 Статистика", callback_data="admin_stats")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(admin_text, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def handle_admin_broadcast_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработка сообщения для массовой рассылки"""
+        user_id = str(update.effective_user.id)
+        
+        # Проверяем, что пользователь в режиме ожидания рассылки
+        if (user_id not in self.user_states or 
+            self.user_states[user_id].get('admin_mode') != 'broadcast_waiting'):
+            return
+        
+        if int(user_id) != ADMIN_ID:
+            return
+        
+        # Получаем всех пользователей
+        try:
+            users = list(users_collection.find({}, {"user_id": 1}))
+            total_users = len(users)
+            
+            if total_users == 0:
+                await update.message.reply_text("❌ Нет пользователей для рассылки.")
+                return
+            
+            # Подтверждение рассылки
+            confirm_text = f"📢 **Подтверждение рассылки**\n\n"
+            confirm_text += f"Сообщение будет отправлено **{total_users}** пользователям.\n\n"
+            confirm_text += "Подтвердите отправку:"
+            
+            # Сохраняем сообщение для рассылки
+            self.user_states[user_id]['broadcast_message'] = update.message
+            self.user_states[user_id]['admin_mode'] = 'broadcast_confirm'
+            
+            keyboard = [
+                [InlineKeyboardButton("✅ Отправить", callback_data="admin_broadcast_confirm")],
+                [InlineKeyboardButton("❌ Отмена", callback_data="admin_cancel")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(confirm_text, reply_markup=reply_markup, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Ошибка при подготовке рассылки: {e}")
+            await update.message.reply_text("❌ Ошибка при подготовке рассылки.")
+
+    async def admin_broadcast_confirm(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Подтверждение и выполнение массовой рассылки"""
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = str(query.from_user.id)
+        
+        if int(user_id) != ADMIN_ID:
+            await query.edit_message_text("❌ У вас нет доступа к админ-панели.")
+            return
+        
+        if (user_id not in self.user_states or 
+            self.user_states[user_id].get('admin_mode') != 'broadcast_confirm'):
+            await query.edit_message_text("❌ Сообщение для рассылки не найдено.")
+            return
+        
+        broadcast_message = self.user_states[user_id].get('broadcast_message')
+        if not broadcast_message:
+            await query.edit_message_text("❌ Сообщение для рассылки не найдено.")
+            return
+        
+        try:
+            # Получаем всех пользователей
+            users = list(users_collection.find({}, {"user_id": 1}))
+            total_users = len(users)
+            
+            await query.edit_message_text(
+                f"📢 **Рассылка запущена...**\n\n"
+                f"Отправка сообщения {total_users} пользователям.\n"
+                f"Это может занять несколько минут.",
+                parse_mode='Markdown'
+            )
+            
+            # Счетчики для статистики
+            sent_count = 0
+            error_count = 0
+            
+            # Отправляем сообщения всем пользователям
+            for user in users:
+                try:
+                    user_chat_id = int(user['user_id'])
+                    
+                    # Определяем тип сообщения и отправляем соответствующим образом
+                    if broadcast_message.text:
+                        await context.bot.send_message(
+                            chat_id=user_chat_id,
+                            text=broadcast_message.text,
+                            parse_mode='Markdown' if any(char in broadcast_message.text for char in ['*', '_', '`']) else None
+                        )
+                    elif broadcast_message.photo:
+                        await context.bot.send_photo(
+                            chat_id=user_chat_id,
+                            photo=broadcast_message.photo[-1].file_id,
+                            caption=broadcast_message.caption
+                        )
+                    elif broadcast_message.video:
+                        await context.bot.send_video(
+                            chat_id=user_chat_id,
+                            video=broadcast_message.video.file_id,
+                            caption=broadcast_message.caption
+                        )
+                    elif broadcast_message.document:
+                        await context.bot.send_document(
+                            chat_id=user_chat_id,
+                            document=broadcast_message.document.file_id,
+                            caption=broadcast_message.caption
+                        )
+                    
+                    sent_count += 1
+                    
+                    # Небольшая пауза между отправками, чтобы не превысить лимиты Telegram
+                    await asyncio.sleep(0.1)
+                    
+                except Exception as e:
+                    logger.error(f"Ошибка при отправке сообщения пользователю {user['user_id']}: {e}")
+                    error_count += 1
+            
+            # Отчет о рассылке
+            report_text = f"📢 **Рассылка завершена!**\n\n"
+            report_text += f"✅ Отправлено: {sent_count}\n"
+            report_text += f"❌ Ошибок: {error_count}\n"
+            report_text += f"📊 Всего пользователей: {total_users}"
+            
+            keyboard = [[InlineKeyboardButton("◀️ В админ-панель", callback_data="admin_menu")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.edit_message_text(report_text, reply_markup=reply_markup, parse_mode='Markdown')
+            
+            # Очищаем состояние
+            if user_id in self.user_states:
+                del self.user_states[user_id]
+                
+        except Exception as e:
+            logger.error(f"Ошибка при выполнении рассылки: {e}")
+            await query.edit_message_text("❌ Ошибка при выполнении рассылки.")
             
     async def callback_query_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик всех callback запросов"""
